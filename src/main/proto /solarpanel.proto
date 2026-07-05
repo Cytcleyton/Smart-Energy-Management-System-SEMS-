@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package solar;
+
+service SolarPanelService {
+  rpc GetPanelStatus (PanelStatusRequest) returns (PanelStatusResponse);
+  rpc StreamEnergyOutput (StreamRequest) returns (stream EnergyReading);
+}
+
+message PanelStatusRequest {
+  string panel_id = 1;
+}
+
+message PanelStatusResponse {
+  string panel_id = 1;
+  bool operational = 2;
+  double efficiency = 3;
+}
+
+message StreamRequest {
+  string panel_id = 1;
+}
+
+message EnergyReading {
+  double watts = 1;
+  int64 timestamp = 2;
+}
