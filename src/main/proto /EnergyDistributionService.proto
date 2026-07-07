@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+option java_package = "com.sems.distribution";
+option java_outer_classname = "EnergyDistributionProto";
+option java_multiple_files = true;
+
+// --- Service definition ---
+service EnergyDistributionService {
+  rpc GetGridStatus (Empty) returns (GridStatusResponse);
+  rpc NegotiateDistribution (stream DistributionRequest) returns (stream DistributionResponse);
+}
+
+// --- Messages ---
+message Empty {
+}
+
+message GridStatusResponse {
+  double demand = 1;
+  double supply = 2;
+}
+
+message DistributionRequest {
+  string source_id = 1;        // panel or battery ID supplying energy
+  double watts_offered = 2;
+}
+
+message DistributionResponse {
+  string appliance_id = 1;     // appliance receiving allocation
+  double watts_allocated = 2;
+  bool grid_import_needed = 3; // true if solar/battery insufficient
+}
