@@ -28,4 +28,4 @@ message DistributionResponse {
   string appliance_id = 1;     // appliance receiving allocation
   double watts_allocated = 2;
   bool grid_import_needed = 3; // true if solar/battery insufficient
-}
+
