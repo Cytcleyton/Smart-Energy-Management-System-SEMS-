@@ -1,21 +1,32 @@
 plugins {
     id 'java'
-    id 'com.google.protobuf' version '0.9.4'
     id 'application'
+    id 'com.google.protobuf' version '0.9.4'
 }
+
+group = 'com.sems'
+version = '1.0.0'
 
 repositories {
     mavenCentral()
 }
-def grpcVersion = '1.62.2'
-def protobufVersion = '3.25.1'
+
+def grpcVersion = '1.66.0'
+def protobufVersion = '3.25.3'
 
 dependencies {
     implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
     implementation "io.grpc:grpc-protobuf:${grpcVersion}"
     implementation "io.grpc:grpc-stub:${grpcVersion}"
-    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "io.grpc:grpc-services:${grpcVersion}"
     compileOnly "org.apache.tomcat:annotations-api:6.0.53"
+
+    implementation "org.jmdns:jmdns:3.5.9"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 protobuf {
@@ -32,4 +43,10 @@ protobuf {
             grpc {}
         }
     }
+}
+
+// This just sets a default "Run" target; you will normally pick the
+// main class you want from IntelliJ's own Run button instead (see README).
+application {
+    mainClass = 'com.sems.client.ClientApp'
 }
