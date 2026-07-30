@@ -16,7 +16,7 @@ public class ServiceRegistrar implements AutoCloseable {
     private ServiceInfo serviceInfo;
 
     public ServiceRegistrar() throws IOException {
-        this.jmdns = JmDNS.create(InetAddress.getLocalHost());
+        this.jmdns = JmDNS.create();
     }
 
     /**
