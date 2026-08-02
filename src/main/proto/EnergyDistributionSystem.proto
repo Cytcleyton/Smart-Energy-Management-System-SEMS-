@@ -17,6 +17,13 @@ message Empty {
 message GridStatusResponse {
   double demand = 1;
   double supply = 2;
+  repeated SourceStatus registered_sources = 3;
+  repeated DistributionResponse current_allocations = 4;
+}
+
+message SourceStatus {
+  string source_id = 1;        // ID of a solar panel or battery that has registered an offer
+  double watts_offered = 2;    // most recent amount that source offered, in watts
 }
 
 message DistributionRequest {
@@ -26,7 +33,8 @@ message DistributionRequest {
 
 message DistributionResponse {
   string appliance_id = 1;     // appliance receiving allocation
-  double watts_allocated = 2;
+  double watts_allocated = 2;  // watts covered by solar/battery supply
   bool grid_import_needed = 3; // true if solar/battery insufficient
+  double watts_from_grid = 4;  // watts this appliance must draw from the national grid
 }
 

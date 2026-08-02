@@ -12,6 +12,7 @@ import com.sems.distribution.DistributionResponse;
 import com.sems.distribution.Empty;
 import com.sems.distribution.EnergyDistributionServiceGrpc;
 import com.sems.distribution.GridStatusResponse;
+import com.sems.distribution.SourceStatus;
 import com.sems.solar.EnergyReading;
 import com.sems.solar.PanelStatusRequest;
 import com.sems.solar.PanelStatusResponse;
@@ -305,7 +306,29 @@ public class ClientGui {
             EnergyDistributionServiceGrpc.EnergyDistributionServiceBlockingStub stub =
                     EnergyDistributionServiceGrpc.newBlockingStub(distributionChannel);
             GridStatusResponse response = stub.getGridStatus(Empty.newBuilder().build());
-            log("GetGridStatus -> " + response.toString().replace("\n", " "));
+
+            log("=== Grid Status ===");
+            log(String.format("  Total demand: %.1fW   Total supply offered: %.1fW", response.getDemand(), response.getSupply()));
+
+            if (response.getRegisteredSourcesCount() == 0) {
+                log("  Registered inputs: none yet - send an offer below first");
+            } else {
+                log("  Registered inputs:");
+                for (SourceStatus s : response.getRegisteredSourcesList()) {
+                    log(String.format("    - %s offering %.1fW", s.getSourceId(), s.getWattsOffered()));
+                }
+            }
+
+            if (response.getCurrentAllocationsCount() == 0) {
+                log("  Allocated devices: none yet - send an offer below first");
+            } else {
+                log("  Allocated devices:");
+                for (DistributionResponse a : response.getCurrentAllocationsList()) {
+                    log(String.format("    - %s: %.1fW from solar/battery, %.1fW from grid%s",
+                            a.getApplianceId(), a.getWattsAllocated(), a.getWattsFromGrid(),
+                            a.getGridImportNeeded() ? "  [grid import needed]" : ""));
+                }
+            }
         }));
 
         JTextField sourceIdField = new JTextField("panel-01", 12);
@@ -326,7 +349,9 @@ public class ClientGui {
             distributionRequestObserver = asyncStub.negotiateDistribution(new StreamObserver<DistributionResponse>() {
                 @Override
                 public void onNext(DistributionResponse response) {
-                    log("Allocation -> " + response.toString().replace("\n", " "));
+                    log(String.format("  Allocation -> %s: %.1fW from solar/battery, %.1fW from grid%s",
+                            response.getApplianceId(), response.getWattsAllocated(), response.getWattsFromGrid(),
+                            response.getGridImportNeeded() ? "  [grid import needed]" : ""));
                 }
 
                 @Override
@@ -417,7 +442,7 @@ public class ClientGui {
 
     private ManagedChannel discoverOrFallback(ServiceLocator locator, String serviceType, int fallbackPort, String label) {
         try {
-            javax.jmdns.ServiceInfo info = locator.discover(serviceType, 8);
+            javax.jmdns.ServiceInfo info = locator.discover(serviceType, 5);
             String host = info.getHostAddresses()[0];
             int port = info.getPort();
             log(label + " discovered via JmDNS at " + host + ":" + port);

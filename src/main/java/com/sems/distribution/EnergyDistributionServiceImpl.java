@@ -6,18 +6,10 @@ import io.grpc.stub.StreamObserver;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Acts as the household grid controller.
- *  - GetGridStatus (unary): quick supply-vs-demand check.
- *  - NegotiateDistribution (bidirectional streaming): sources continuously report
- *    available watts; the service continuously responds with allocation decisions,
- *    prioritising sources with the most available watts before flagging a grid import.
- */
 public class EnergyDistributionServiceImpl extends EnergyDistributionServiceGrpc.EnergyDistributionServiceImplBase {
 
-    /** Simulated household appliances waiting for an allocation, in priority order. */
+    /** Simulated household appliances waiting for an allocation in priority order. */
     private static final Map<String, Double> APPLIANCE_DEMAND = new LinkedHashMap<>();
     static {
         APPLIANCE_DEMAND.put("immersion-heater", 1500.0);
@@ -28,25 +20,34 @@ public class EnergyDistributionServiceImpl extends EnergyDistributionServiceGrpc
     // Tracks cumulative watts offered per source across a household, per call.
     private final Map<String, Double> sourceOffers = new ConcurrentHashMap<>();
 
+    // Tracks the most recent allocation sent to each appliance, so GetGridStatus can show
+    // a live snapshot of what's currently allocated, not just raw totals.
+    private final Map<String, DistributionResponse> lastAllocations = new ConcurrentHashMap<>();
+
     @Override
     public void getGridStatus(Empty request, StreamObserver<GridStatusResponse> responseObserver) {
         double totalDemand = APPLIANCE_DEMAND.values().stream().mapToDouble(Double::doubleValue).sum();
         double totalSupply = sourceOffers.values().stream().mapToDouble(Double::doubleValue).sum();
 
-        GridStatusResponse response = GridStatusResponse.newBuilder()
+        GridStatusResponse.Builder responseBuilder = GridStatusResponse.newBuilder()
                 .setDemand(totalDemand)
-                .setSupply(totalSupply)
-                .build();
+                .setSupply(totalSupply);
 
-        responseObserver.onNext(response);
+        sourceOffers.forEach((sourceId, watts) ->
+                responseBuilder.addRegisteredSources(SourceStatus.newBuilder()
+                        .setSourceId(sourceId)
+                        .setWattsOffered(watts)
+                        .build()));
+
+        responseBuilder.addAllCurrentAllocations(lastAllocations.values());
+
+        responseObserver.onNext(responseBuilder.build());
         responseObserver.onCompleted();
     }
 
     @Override
     public StreamObserver<DistributionRequest> negotiateDistribution(StreamObserver<DistributionResponse> responseObserver) {
         return new StreamObserver<>() {
-            private final AtomicInteger applianceCursor = new AtomicInteger(0);
-            private final String[] appliances = APPLIANCE_DEMAND.keySet().toArray(new String[0]);
 
             @Override
             public void onNext(DistributionRequest request) {
@@ -58,25 +59,33 @@ public class EnergyDistributionServiceImpl extends EnergyDistributionServiceGrpc
                     return;
                 }
 
-                // Record how much this source is currently offering (prioritised by amount offered).
+                // Pool this source's offer into the shared supply - sources are fungible in a
+                // microgrid, the controller doesn't care which panel or battery a watt came from.
                 sourceOffers.merge(request.getSourceId(), request.getWattsOffered(), (oldVal, newVal) -> newVal);
 
-                double totalAvailable = sourceOffers.values().stream().mapToDouble(Double::doubleValue).sum();
-                double totalDemand = APPLIANCE_DEMAND.values().stream().mapToDouble(Double::doubleValue).sum();
-                boolean gridImportNeeded = totalAvailable < totalDemand;
+                // Re-run a full allocation pass across every appliance, in priority order, using the
+                // total pooled supply. Every new offer immediately re-balances the whole microgrid -
+                // real dynamic load balancing
+                double remainingSupply = sourceOffers.values().stream().mapToDouble(Double::doubleValue).sum();
 
-                // Allocate to the next appliance in the priority queue, capped by what this source offered.
-                String appliance = appliances[applianceCursor.getAndUpdate(i -> (i + 1) % appliances.length)];
-                double demand = APPLIANCE_DEMAND.get(appliance);
-                double allocated = Math.min(demand, request.getWattsOffered());
+                for (Map.Entry<String, Double> entry : APPLIANCE_DEMAND.entrySet()) {
+                    String appliance = entry.getKey();
+                    double demand = entry.getValue();
+                    double allocated = Math.max(0.0, Math.min(demand, remainingSupply));
+                    remainingSupply -= allocated;
+                    double wattsFromGrid = Math.max(0.0, demand - allocated);
+                    boolean applianceNeedsGrid = wattsFromGrid > 0;
 
-                DistributionResponse response = DistributionResponse.newBuilder()
-                        .setApplianceId(appliance)
-                        .setWattsAllocated(Math.round(allocated * 10.0) / 10.0)
-                        .setGridImportNeeded(gridImportNeeded)
-                        .build();
+                    DistributionResponse response = DistributionResponse.newBuilder()
+                            .setApplianceId(appliance)
+                            .setWattsAllocated(Math.round(allocated * 10.0) / 10.0)
+                            .setGridImportNeeded(applianceNeedsGrid)
+                            .setWattsFromGrid(Math.round(wattsFromGrid * 10.0) / 10.0)
+                            .build();
 
-                responseObserver.onNext(response);
+                    lastAllocations.put(appliance, response);
+                    responseObserver.onNext(response);
+                }
             }
 
             @Override
